@@ -1,4 +1,5 @@
-#include <QUdpSocket>
+#include <QtCore/QString>
+#include <QtNetwork/QUdpSocket>
 
 #define PACKED __attribute__((packed))
 
@@ -17,21 +18,45 @@ enum RegionCode
 
 typedef QPair<QHostAddress, quint16> SteamServer;
 
-class ServeryQuery
+struct SteamServerInfo
+{
+    QString ServerName;
+    QString Map;
+    QString GameDir;
+    QString GameDescription;
+    short AppID;
+    char NumPlayers;
+    char MaxPlayers;
+    char NumBots;
+    char Dedicated;
+    char OS;
+    bool Password;
+    bool Secure;
+    QString GameVersion;
+    SteamServer ConnectAddress;
+};
+
+class ServerQuery
 {
 private:
-    Qt::QUdpSocket* UdpSocket;
+    QUdpSocket* UdpSocket;
+    QList<SteamServer> PendingQueries;
 public:
     ServerQuery();
     ~ServerQuery();
     //TODO: Read these from MasterServers.vdf is possible.
     SteamServer GetMasterServerHost();
-    void SendMasterServerQuery(RegionCode Region, const char* IP_Port, const char* Filter);
+    void SendMasterServerQuery(RegionCode Region, SteamServer LastServer, const char* Filter);
     QBool CheckMasterServerRetCode(const char* Packet, const char** inc = NULL);
     // Returns false if there are no more servers incoming.
     QBool ParseMasterServerRet(const char* PacketData,
                                size_t Length,
                                QList<SteamServer>& RetServers);
+    void GetServerList();
+    static SteamServer StartServer()
+    {
+        return SteamServer(QHostAddress((quint32)0), 0);
+    }
 };
 
 
@@ -46,7 +71,7 @@ ServerQuery::~ServerQuery()
     delete UdpSocket();
 }
 
-QHostAddress GetMasterServerHost()
+QHostAddress ServerQuery::GetMasterServerHost()
 {
     //Warning: We assume that QHostInfo::fromName is reentrant if it's used in another thread.
     return SteamServer(
@@ -55,9 +80,11 @@ QHostAddress GetMasterServerHost()
 }
 
 void ServerQuery::SendMasterServerQuery(RegionCode Region,
-                                        const char* IP_Port,
+                                        SteamServer LastServer,
                                         const char* Filter)
 {
+    QString Address = LastServer.first().toString() + ":" + QString(LastServer.second());
+    const char* IP_Port = Address.c_str()
     struct PACKED MS_Packet_Header
     {
         char MessageType:8;
@@ -84,7 +111,7 @@ void ServerQuery::SendMasterServerQuery(RegionCode Region,
     delete Buffer;
 }
 
-QBool CheckMasterServerRetCode(const char* Packet, const char** inc)
+QBool ServerQuery::CheckMasterServerRetCode(const char* Packet, const char** inc)
 {
 #define CHECK_INC_BYTE(PTR, BYT) if(*(PTR++) != (char)(BYT)) return false;
 
@@ -100,7 +127,7 @@ QBool CheckMasterServerRetCode(const char* Packet, const char** inc)
 #undef CHECK_INC_BYTE
 }
 
-QBool ParseMasterServerRet(const char* PacketData,
+QBool ServerQuery::ParseMasterServerRet(const char* PacketData,
                            size_t Length,
                            QList<SteamServer>& RetServers)
 {
@@ -127,6 +154,8 @@ QBool ParseMasterServerRet(const char* PacketData,
             assert(RetAddress->Port == 0 && "IP Address is Null but Port isn't.");
             assert(Curr - PacketData + sizeof(MS_RetAddress) == Length &&
                    "Extra packet data after list end address.");
+
+            return false; // Done receiving all servers.
         }
 
         //NETASSERT: Shouldn't assert on packet errors.
@@ -138,5 +167,54 @@ QBool ParseMasterServerRet(const char* PacketData,
                                  RetAddress->Port));
 
         Curr += sizeof(MS_RetAddress);
+    }
+
+    return false; // Still have more servers to query.
+}
+
+void ServerQuery::GetServerList()
+{
+    Qbool MSReceivedAll = false;
+    // Test query
+    SendMasterServerQuery(US_West, ServerQuery::StartServer(), "");
+    
+    while(true)
+    {
+        if(UdpSocket->hasPendingDatagrams())
+        {
+            size_t PacketSize = UdpSocket->pendingDatagramSize();
+            char* PacketData = new char[PacketSize];
+            
+            QHostAddress SourceAddress;
+            quint16 SourcePort;
+            size_t Err =
+                UdpSocket->readDatagram(PacketData,
+                                        PacketSize,
+                                        &SourceAddress,
+                                        &SourcePort);
+
+            if(err == -1)
+            {
+                assert(false && "Problem reading datagram");
+                delete PacketData;
+                continue;
+            }
+            assert(Err == PacketSize && "pending and read datagram sizes differ");
+            //TODO: Verify SourceAddress and SourcePort.
+
+            MSReceivedAll = ParseMasterServerRet(PacketData, PacketSize, PendingQueries);
+            
+            delete PacketData;
+        }
+        else if(!PendingQueries.empty())
+        {
+            // Send query to the server.
+        }
+        else
+        {
+            // There was Nothing to do! sleep!
+            //TODO: Check timeout!
+            sleep(0.1);
+        }
     }
 }
