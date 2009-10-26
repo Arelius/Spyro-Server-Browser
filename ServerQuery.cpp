@@ -1,5 +1,7 @@
 #include <QtCore/QString>
 #include <QtNetwork/QUdpSocket>
+#include <QtNetwork/QHostInfo>
+#include <assert.h>
 
 #define PACKED __attribute__((packed))
 
@@ -47,9 +49,9 @@ public:
     //TODO: Read these from MasterServers.vdf is possible.
     SteamServer GetMasterServerHost();
     void SendMasterServerQuery(RegionCode Region, SteamServer LastServer, const char* Filter);
-    QBool CheckMasterServerRetCode(const char* Packet, const char** inc = NULL);
+    bool CheckMasterServerRetCode(const char* Packet, const char** inc = NULL);
     // Returns false if there are no more servers incoming.
-    QBool ParseMasterServerRet(const char* PacketData,
+    bool ParseMasterServerRet(const char* PacketData,
                                size_t Length,
                                QList<SteamServer>& RetServers);
     void GetServerList();
@@ -68,10 +70,10 @@ ServerQuery::ServerQuery()
 
 ServerQuery::~ServerQuery()
 {
-    delete UdpSocket();
+    delete UdpSocket;
 }
 
-QHostAddress ServerQuery::GetMasterServerHost()
+SteamServer ServerQuery::GetMasterServerHost()
 {
     //Warning: We assume that QHostInfo::fromName is reentrant if it's used in another thread.
     return SteamServer(
@@ -83,8 +85,8 @@ void ServerQuery::SendMasterServerQuery(RegionCode Region,
                                         SteamServer LastServer,
                                         const char* Filter)
 {
-    QString Address = LastServer.first().toString() + ":" + QString(LastServer.second());
-    const char* IP_Port = Address.c_str()
+    QString Address = LastServer.first.toString() + ":" + QString(LastServer.second);
+    const char* IP_Port = Address.toAscii().data();
     struct PACKED MS_Packet_Header
     {
         char MessageType:8;
@@ -100,23 +102,23 @@ void ServerQuery::SendMasterServerQuery(RegionCode Region,
     char* Buffer = new char[PacketLength];
     char* Curr = Buffer;
 
-    memcpy(Curr, &PackHead, sizeof(PackHead));  Curr += PackHead;
+    memcpy(Curr, &PackHead, sizeof(PackHead));  Curr += sizeof(PackHead);
     memcpy(Curr, IP_Port, strlen(IP_Port) + 1); Curr += strlen(IP_Port) + 1;
     memcpy(Curr, Filter, strlen(Filter) + 1);   Curr += strlen(Filter) + 1;
 
     SteamServer MasterServer = GetMasterServerHost();
 
-    UdpSocket->writeDatagram(Buffer, PacketLength, MasterServer.first(), MasterServer.second());
+    UdpSocket->writeDatagram(Buffer, PacketLength, MasterServer.first, MasterServer.second);
 
     delete Buffer;
 }
 
-QBool ServerQuery::CheckMasterServerRetCode(const char* Packet, const char** inc)
+bool ServerQuery::CheckMasterServerRetCode(const char* Packet, const char** inc)
 {
 #define CHECK_INC_BYTE(PTR, BYT) if(*(PTR++) != (char)(BYT)) return false;
 
     const char* Curr = Packet;
-    for(int i=0, i<4, i++)
+    for(int i=0; i<4; i++)
         CHECK_INC_BYTE(Curr, 0xFF);
     CHECK_INC_BYTE(Curr, 0x66);
     CHECK_INC_BYTE(Curr, 0x0A);
@@ -127,7 +129,7 @@ QBool ServerQuery::CheckMasterServerRetCode(const char* Packet, const char** inc
 #undef CHECK_INC_BYTE
 }
 
-QBool ServerQuery::ParseMasterServerRet(const char* PacketData,
+bool ServerQuery::ParseMasterServerRet(const char* PacketData,
                            size_t Length,
                            QList<SteamServer>& RetServers)
 {
@@ -159,7 +161,7 @@ QBool ServerQuery::ParseMasterServerRet(const char* PacketData,
         }
 
         //NETASSERT: Shouldn't assert on packet errors.
-        assert(Port && "Valid IP but port is 0.");
+        assert(RetAddress->Port && "Valid IP but port is 0.");
 
         // Generate a SteamServer add it to the list.
         RetServers.push_back(SteamServer(
@@ -174,7 +176,7 @@ QBool ServerQuery::ParseMasterServerRet(const char* PacketData,
 
 void ServerQuery::GetServerList()
 {
-    Qbool MSReceivedAll = false;
+    bool MSReceivedAll = false;
     // Test query
     SendMasterServerQuery(US_West, ServerQuery::StartServer(), "");
     
@@ -193,7 +195,7 @@ void ServerQuery::GetServerList()
                                         &SourceAddress,
                                         &SourcePort);
 
-            if(err == -1)
+            if(Err == -1)
             {
                 assert(false && "Problem reading datagram");
                 delete PacketData;
