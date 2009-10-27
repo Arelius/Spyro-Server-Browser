@@ -38,6 +38,5 @@ void BrowserWindow::TestClicked()
 
 void BrowserWindow::ServerInfoReceived(SteamServerInfo Info)
 {
-    printf("this:%d\n", this);
-//    QMessageBox::information(this, "Received Server Info", Info.ConnectAddress);
+    QMessageBox::information(this, "Received Server Info", Info.ConnectAddress);
 }
