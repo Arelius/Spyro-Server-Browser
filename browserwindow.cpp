@@ -1,6 +1,7 @@
 #include "browserwindow.h"
 #include "ui_browserwindow.h"
 #include "ServerQuery.h"
+#include "ServerTableModel.h"
 #include <QtGui/QMessageBox>
 
 BrowserWindow::BrowserWindow(QWidget *parent) :
@@ -9,12 +10,17 @@ BrowserWindow::BrowserWindow(QWidget *parent) :
 {
     ui->setupUi(this);
     Query = new AsyncServerQuery();
+
+    ServerModel = new ServerTableModel();
+    ui->serverView->setModel(ServerModel);
+
     connect(Query, SIGNAL(ServerInfoReceived(SteamServerInfo)),
-            this, SLOT(ServerInfoReceived(SteamServerInfo)));
+            ServerModel, SLOT(AddServerInfo(SteamServerInfo)));
 }
 
 BrowserWindow::~BrowserWindow()
 {
+    delete ServerModel;
     delete Query;
     delete ui;
 }
@@ -31,12 +37,7 @@ void BrowserWindow::changeEvent(QEvent *e)
     }
 }
 
-void BrowserWindow::TestClicked()
+void BrowserWindow::RefreshClicked()
 {
     Query->QueryServerList();
-}
-
-void BrowserWindow::ServerInfoReceived(SteamServerInfo Info)
-{
-    QMessageBox::information(this, "Received Server Info", Info.ConnectAddress);
 }

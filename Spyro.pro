@@ -6,7 +6,9 @@ TARGET = Spyro
 TEMPLATE = app
 SOURCES += main.cpp \
     browserwindow.cpp \
-    ServerQuery.cpp
+    ServerQuery.cpp \
+    ServerTableModel.cpp
 HEADERS += browserwindow.h \
-    ServerQuery.h
+    ServerQuery.h \
+    ServerTableModel.h
 FORMS += browserwindow.ui

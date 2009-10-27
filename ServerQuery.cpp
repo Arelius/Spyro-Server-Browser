@@ -35,6 +35,7 @@ SteamServerInfo::SteamServerInfo(const SteamServer& Address)
     Password = false;
     Secure = false;
     ConnectAddress = SteamServerToQString(Address);
+    ServerName = ConnectAddress;
 }
 
 SteamServerInfo::SteamServerInfo(const SteamServerInfo& O)
@@ -53,7 +54,6 @@ SteamServerInfo::SteamServerInfo(const SteamServerInfo& O)
     Secure = O.Secure;
     GameVersion = O.GameVersion;
     ConnectAddress = O.ConnectAddress;
-    printf("Copy:%s\n", ConnectAddress.toAscii().data());
 }
 
 SteamServerInfo::~SteamServerInfo()
@@ -213,11 +213,8 @@ void ServerQuery::GetServerList()
         else if(!PendingQueries.empty())
         {
             // Send query to the server.
-            printf("Server:%s\n", PendingQueries.front().first.toString().toAscii().data());
             SteamServerInfo Info = SteamServerInfo(PendingQueries.front());
             printf("Server Info:%s\n", Info.ConnectAddress.toAscii().data());
-            SteamServerInfo Info2(Info);
-            printf("Server Info2:%s\n", Info2.ConnectAddress.toAscii().data());
             ServerInfoReceived(Info);
             PendingQueries.pop_front();
         }

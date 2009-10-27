@@ -12,6 +12,7 @@ class BrowserWindow : public QMainWindow {
     Q_OBJECT
 private:
     class AsyncServerQuery* Query;
+    class ServerTableModel* ServerModel;
 public:
     BrowserWindow(QWidget *parent = 0);
     ~BrowserWindow();
@@ -19,8 +20,7 @@ public:
 protected:
     void changeEvent(QEvent *e);
 public slots:
-    void TestClicked();
-    void ServerInfoReceived(SteamServerInfo Info);
+    void RefreshClicked();
 
 private:
     Ui::BrowserWindow *ui;
