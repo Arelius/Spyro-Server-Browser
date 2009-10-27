@@ -1,3 +1,4 @@
+#include "ServerQuery.h"
 #include <QtCore/QString>
 #include <QtNetwork/QUdpSocket>
 #include <QtNetwork/QHostInfo>
@@ -211,12 +212,22 @@ void ServerQuery::GetServerList()
         else if(!PendingQueries.empty())
         {
             // Send query to the server.
+            printf("Found Server:%s\n", PendingQueries.front().first.toString().toAscii().data());
+            PendingQueries.pop_front();
         }
         else
         {
+            if(MSReceivedAll)
+                return;
             // There was Nothing to do! sleep!
             //TODO: Check timeout!
             sleep(0.1);
         }
     }
+}
+
+void TestServerQuery()
+{
+    ServerQuery Query;
+    Query.GetServerList();
 }
