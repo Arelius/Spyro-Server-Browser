@@ -2,65 +2,62 @@
 #include <QtCore/QString>
 #include <QtNetwork/QUdpSocket>
 #include <QtNetwork/QHostInfo>
+#include <QtCore/QThread>
 #include <assert.h>
 
 #define PACKED __attribute__((packed))
 
-enum RegionCode
+QString SteamServerToQString(const SteamServer& Address)
 {
-    US_East = 0,
-    US_West = 1,
-    South_America = 2,
-    Europe = 3,
-    Asia = 4,
-    Australia = 5,
-    Middle_East = 6,
-    Africa = 7,
-    Rest = 0xff
-};
+    return Address.first.toString() + ":" + QString::number(Address.second);
+}
 
-typedef QPair<QHostAddress, quint16> SteamServer;
-
-struct SteamServerInfo
+SteamServerInfo::SteamServerInfo()
 {
-    QString ServerName;
-    QString Map;
-    QString GameDir;
-    QString GameDescription;
-    short AppID;
-    char NumPlayers;
-    char MaxPlayers;
-    char NumBots;
-    char Dedicated;
-    char OS;
-    bool Password;
-    bool Secure;
-    QString GameVersion;
-    SteamServer ConnectAddress;
-};
+    AppID = 0;
+    NumPlayers = 0;
+    MaxPlayers = 0;
+    NumBots = 0;
+    Dedicated = 0;
+    OS = 0;
+    Password = false;
+    Secure = false;
+}
 
-class ServerQuery
+SteamServerInfo::SteamServerInfo(const SteamServer& Address)
 {
-private:
-    QUdpSocket* UdpSocket;
-    QList<SteamServer> PendingQueries;
-public:
-    ServerQuery();
-    ~ServerQuery();
-    //TODO: Read these from MasterServers.vdf is possible.
-    SteamServer GetMasterServerHost();
-    void SendMasterServerQuery(RegionCode Region, SteamServer LastServer, const char* Filter);
-    bool CheckMasterServerRetCode(const char* Packet, const char** inc = NULL);
-    // Returns false if there are no more servers incoming.
-    bool ParseMasterServerRet(const char* PacketData,
-                               size_t Length,
-                               QList<SteamServer>& RetServers);
-    void GetServerList();
-    static SteamServer StartServer()
-    {
-        return SteamServer(QHostAddress((quint32)0), 0);
-    }
-};
+    AppID = 0;
+    NumPlayers = 0;
+    MaxPlayers = 0;
+    NumBots = 0;
+    Dedicated = 0;
+    OS = 0;
+    Password = false;
+    Secure = false;
+    ConnectAddress = SteamServerToQString(Address);
+}
+
+SteamServerInfo::SteamServerInfo(const SteamServerInfo& O)
+{
+    ServerName = O.ServerName;
+    Map = O.Map;
+    GameDir = O.GameDir;
+    GameDescription = O.GameDescription;
+    AppID = O.AppID;
+    NumPlayers = O.NumPlayers;
+    MaxPlayers = O.MaxPlayers;
+    NumBots = O.NumBots;
+    Dedicated = O.Dedicated;
+    OS = O.OS;
+    Password = O.Password;
+    Secure = O.Secure;
+    GameVersion = O.GameVersion;
+    ConnectAddress = O.ConnectAddress;
+    printf("Copy:%s\n", ConnectAddress.toAscii().data());
+}
+
+SteamServerInfo::~SteamServerInfo()
+{}
 
 
 ServerQuery::ServerQuery()
@@ -77,16 +74,20 @@ ServerQuery::~ServerQuery()
 SteamServer ServerQuery::GetMasterServerHost()
 {
     //Warning: We assume that QHostInfo::fromName is reentrant if it's used in another thread.
+    // return SteamServer(
+    //     QHostInfo::fromName(QString("hl2master.steampowered.com")).addresses().first(),
+    //     27011);
+
+    //hl2master doesn't seem to respond.
     return SteamServer(
-        QHostInfo::fromName(QString("hl2master.steampowered.com")).addresses().first(),
-        27012);
+        QHostAddress(QString("72.165.61.136")), 27014);
 }
 
 void ServerQuery::SendMasterServerQuery(RegionCode Region,
                                         SteamServer LastServer,
                                         const char* Filter)
 {
-    QString Address = LastServer.first.toString() + ":" + QString(LastServer.second);
+    QString Address = LastServer.first.toString() + ":" + QString::number(LastServer.second);
     const char* IP_Port = Address.toAscii().data();
     struct PACKED MS_Packet_Header
     {
@@ -179,7 +180,7 @@ void ServerQuery::GetServerList()
 {
     bool MSReceivedAll = false;
     // Test query
-    SendMasterServerQuery(US_West, ServerQuery::StartServer(), "");
+    SendMasterServerQuery(Rest, ServerQuery::StartServer(), "\\gamedir\\tf\\napp\\500");
     
     while(true)
     {
@@ -196,7 +197,7 @@ void ServerQuery::GetServerList()
                                         &SourceAddress,
                                         &SourcePort);
 
-            if(Err == -1)
+            if((int)Err == -1)
             {
                 assert(false && "Problem reading datagram");
                 delete PacketData;
@@ -212,7 +213,12 @@ void ServerQuery::GetServerList()
         else if(!PendingQueries.empty())
         {
             // Send query to the server.
-            printf("Found Server:%s\n", PendingQueries.front().first.toString().toAscii().data());
+            printf("Server:%s\n", PendingQueries.front().first.toString().toAscii().data());
+            SteamServerInfo Info = SteamServerInfo(PendingQueries.front());
+            printf("Server Info:%s\n", Info.ConnectAddress.toAscii().data());
+            SteamServerInfo Info2(Info);
+            printf("Server Info2:%s\n", Info2.ConnectAddress.toAscii().data());
+            ServerInfoReceived(Info);
             PendingQueries.pop_front();
         }
         else
@@ -224,10 +230,48 @@ void ServerQuery::GetServerList()
             sleep(0.1);
         }
     }
+    ServerQueryFinished();
 }
 
-void TestServerQuery()
+class QueryThread : public QThread
 {
-    ServerQuery Query;
-    Query.GetServerList();
+    AsyncServerQuery* QueryProxy;
+public:
+    QueryThread(AsyncServerQuery* Receiving) : QueryProxy(Receiving)
+    {}
+    void run()
+    {
+        ServerQuery Query;
+
+        // They say that Signals and slots work between threads.
+        // so, wire up the signals from this thread into the
+        // async object in the other.
+        Query.connect(&Query, SIGNAL(ServerInfoReceived(SteamServerInfo)),
+                      QueryProxy, SIGNAL(ServerInfoReceived(SteamServerInfo)),
+                      Qt::QueuedConnection);
+        Query.connect(&Query, SIGNAL(ServerQueryFinished()),
+                      QueryProxy, SIGNAL(ServerQueryFinished()),
+                      Qt::QueuedConnection);
+        Query.connect(&Query, SIGNAL(ServerQueryTimeout()),
+                      QueryProxy, SIGNAL(ServerQueryTimeout()),
+                      Qt::QueuedConnection);
+
+        Query.GetServerList();
+    }
+};
+
+AsyncServerQuery::AsyncServerQuery()
+{
+    SQThread = new QueryThread(this);
+}
+
+AsyncServerQuery::~AsyncServerQuery()
+{
+    SQThread->wait();
+    delete SQThread;
+}
+
+void AsyncServerQuery::QueryServerList()
+{
+    SQThread->start();
 }

@@ -9,6 +9,8 @@ namespace Ui {
 
 class BrowserWindow : public QMainWindow {
     Q_OBJECT
+private:
+    class AsyncServerQuery* Query;
 public:
     BrowserWindow(QWidget *parent = 0);
     ~BrowserWindow();
@@ -17,6 +19,7 @@ protected:
     void changeEvent(QEvent *e);
 public slots:
     void TestClicked();
+    void ServerInfoReceived(struct SteamServerInfo Info);
 
 private:
     Ui::BrowserWindow *ui;
