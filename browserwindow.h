@@ -2,6 +2,7 @@
 #define BROWSERWINDOW_H
 
 #include <QMainWindow>
+#include "ServerQuery.h"
 
 namespace Ui {
     class BrowserWindow;
@@ -19,7 +20,7 @@ protected:
     void changeEvent(QEvent *e);
 public slots:
     void TestClicked();
-    void ServerInfoReceived(struct SteamServerInfo Info);
+    void ServerInfoReceived(SteamServerInfo Info);
 
 private:
     Ui::BrowserWindow *ui;
